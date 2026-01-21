@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import os
 from dotenv import load_dotenv
 
-# ✅ 라우터 import 전에 env 먼저 로드
 load_dotenv()
 
 from fastapi import FastAPI
@@ -43,3 +43,15 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    port = int(os.getenv("PORT", "8000"))
+
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=port,
+    )
