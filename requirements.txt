@@ -5,3 +5,4 @@ httpx
 pydantic
 tqdm
 uvicorn
+requests
