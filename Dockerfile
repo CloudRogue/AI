@@ -6,10 +6,10 @@ WORKDIR /app
 
 # 3. 필요 파일 복사 및 라이브러리 설치
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt uvicorn
 
 # 4. 전체 코드 복사
 COPY . .
 
 # 5. 실행 명령 (예: FastAPI나 Flask 기준)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
