@@ -1,0 +1,46 @@
+name: AI Service Deploy
+ 
+on:
+  push:
+    branches: [ "main" ]
+    # AI 리포지토리 루트의 모든 변경사항을 감지하도록 설정합니다.
+    paths:
+      - '**'
+  workflow_dispatch: 
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_OIDC_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_OIDC_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: latest
+        run: |
+          # AI 리포지토리는 루트에 Dockerfile이 있으므로 -f 옵션 없이 현재 경로(.)에서 빌드합니다.
+          docker build -t $ECR_REGISTRY/${{ secrets.ECR_AI_REPOSITORY }}:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/${{ secrets.ECR_AI_REPOSITORY }}:$IMAGE_TAG
+          echo "Pushed: $ECR_REGISTRY/${{ secrets.ECR_AI_REPOSITORY }}:$IMAGE_TAG"
+
+      - name: Update ECS service 
+        run: |
+          aws ecs update-service --cluster ${{ secrets.ECS_CLUSTER_NAME }} \
+                                 --service ${{ secrets.ECS_AI_SERVICE_NAME }} \
+                                 --force-new-deployment \
+                                 --region ${{ secrets.AWS_OIDC_REGION }}
