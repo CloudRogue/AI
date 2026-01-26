@@ -59,7 +59,6 @@ def _get_required_env(name: str) -> str:
 
 
 def _build_service() -> OnboardingAiService:
-
     prompt_path = _get_required_env("PROMPT_PATH")
 
     runner = PipelineRunner()
@@ -70,6 +69,18 @@ def _build_service() -> OnboardingAiService:
         prompt_path=prompt_path,
         client=client,
     )
+
+
+# -----------------------------
+# Service Singleton Cache
+# -----------------------------
+_service: OnboardingAiService | None = None  # CHANGED
+
+def get_service() -> OnboardingAiService:  # CHANGED
+    global _service
+    if _service is None:
+        _service = _build_service()
+    return _service
 
 
 # -----------------------------
@@ -141,7 +152,7 @@ async def ingest(request: Request) -> List[AnswerItem]:
     # Build Service
     # -------------------------
     try:
-        service = _build_service()
+        service = get_service()  # CHANGED (was: _build_service())
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Server configuration error: {e}")
 

@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 
 @dataclass(frozen=True)
@@ -16,10 +18,13 @@ class OpenAIConfig:
 class OpenAIClient:
     """
     - env에서 OPENAI_API_KEY / OPENAI_MODEL 읽음
-    - Files API로 PDF 업로드 -> file_id
-      * purpose는 'user_data' 사용 (Responses에서 파일 입력 용도)
+    - Files API로 PDF 업로드 -> file_id (purpose='user_data')
     - Responses API에 input_file(file_id) + input_text 로 요청
-    - (추가) Responses API에 input_text만으로 요청 (텍스트 전용)
+    - Responses API에 input_text만으로 요청 (텍스트 전용)
+
+    개선:
+    - requests.Session 재사용(커넥션 풀 안정화/리소스 절약)
+    - 간단 retry + pool 튜닝
     """
 
     def __init__(self, cfg: Optional[OpenAIConfig] = None):
@@ -36,6 +41,28 @@ class OpenAIClient:
         self._files_url = "https://api.openai.com/v1/files"
         self._responses_url = "https://api.openai.com/v1/responses"
 
+        # ✅ Session 재사용
+        self._session = requests.Session()
+
+        # ✅ (선택) Retry + Pool 튜닝
+        retry = Retry(
+            total=3,
+            backoff_factor=0.5,
+            status_forcelist=(429, 500, 502, 503, 504),
+            allowed_methods=("POST",),
+            raise_on_status=False,
+        )
+        adapter = HTTPAdapter(
+            max_retries=retry,
+            pool_connections=20,
+            pool_maxsize=20,
+        )
+        self._session.mount("https://", adapter)
+        self._session.mount("http://", adapter)
+
+    def close(self) -> None:
+        self._session.close()
+
     # -------------------------
     # Files API
     # -------------------------
@@ -43,9 +70,8 @@ class OpenAIClient:
         """
         PDF bytes 업로드 후 file_id 반환.
 
-        목적(purpose):
-        - 'responses'는 허용되지 않음
-        - PDF를 모델 입력으로 쓰는 경우 공식 가이드 예시대로 'user_data' 사용
+        purpose:
+        - PDF를 모델 입력으로 쓰는 경우 'user_data'
         """
         if not pdf_bytes:
             raise ValueError("pdf_bytes is empty")
@@ -56,7 +82,7 @@ class OpenAIClient:
         files = {"file": (filename, pdf_bytes, "application/pdf")}
         data = {"purpose": "user_data"}
 
-        r = requests.post(self._files_url, headers=headers, files=files, data=data, timeout=timeout)
+        r = self._session.post(self._files_url, headers=headers, files=files, data=data, timeout=timeout)
         if r.status_code >= 400:
             raise RuntimeError(f"OpenAI Files API error {r.status_code}: {r.text}")
 
@@ -103,7 +129,7 @@ class OpenAIClient:
             ],
         }
 
-        r = requests.post(self._responses_url, headers=headers, json=body, timeout=timeout)
+        r = self._session.post(self._responses_url, headers=headers, json=body, timeout=timeout)
         if r.status_code >= 400:
             raise RuntimeError(f"OpenAI API error {r.status_code}: {r.text}")
         return r.json()
@@ -138,7 +164,7 @@ class OpenAIClient:
             ],
         }
 
-        r = requests.post(self._responses_url, headers=headers, json=body, timeout=timeout)
+        r = self._session.post(self._responses_url, headers=headers, json=body, timeout=timeout)
         if r.status_code >= 400:
             raise RuntimeError(f"OpenAI API error {r.status_code}: {r.text}")
         return r.json()
